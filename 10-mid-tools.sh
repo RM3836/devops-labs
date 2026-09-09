@@ -1,386 +1,404 @@
 #!/bin/bash
 # ============================================
-# DevOps实战 Lab 10-15: 中级工具合集
+# DevOps实战 Lab 10-15: 中级工具合集(实操版)
 # 运行: bash 10-mid-tools.sh
 # ============================================
+
+set -e
 
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 10: Redis 缓存${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+# ---------- 工具函数 ----------
+info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+fail()  { echo -e "${RED}[ERROR]${NC} $1"; }
+cmd()   { echo -e "${YELLOW}\$ $1${NC}"; }
 
-安装: apt install redis-server  或  docker run -d redis:alpine
+section() {
+    echo ""
+    echo -e "${CYAN}========================================${NC}"
+    echo -e "${CYAN}  $1${NC}"
+    echo -e "${CYAN}========================================${NC}"
+}
 
-基本操作:
-  redis-cli                       连接
-  redis-cli -h host -p 6379 -a password  远程连接
+# 通用: 检查命令是否存在
+has() { command -v "$1" >/dev/null 2>&1; }
 
-  # String
-  SET name "kainan"               设置
-  GET name                        获取
-  SET token "abc" EX 3600         设置+过期时间(秒)
-  INCR counter                    自增
-  MSET k1 v1 k2 v2               批量设置
+# ============================================================
+# Lab 10: Redis 缓存(实操)
+# ============================================================
+lab10_redis() {
+    section "Lab 10: Redis 缓存(实操)"
 
-  # Hash(对象)
-  HSET user:1 name "kainan" age 22
-  HGET user:1 name
-  HGETALL user:1
+    if has redis-cli; then
+        info "检测到本机 Redis,使用本地实例"
+        redis-cli ping >/dev/null 2>&1 || {
+            warn "Redis 未运行,尝试启动..."
+            service redis-server start >/dev/null 2>&1 || sudo service redis-server start >/dev/null 2>&1 || true
+            sleep 1
+        }
+        RCLI="redis-cli"
+    elif has docker && docker info >/dev/null 2>&1; then
+        info "用 Docker 启动 Redis 容器"
+        docker rm -f lab-redis >/dev/null 2>&1 || true
+        docker run -d --name lab-redis -p 6379:6379 redis:alpine >/dev/null 2>&1
+        sleep 2
+        RCLI="docker exec lab-redis redis-cli"
+        warn "演示结束后请执行: docker rm -f lab-redis 清理容器"
+    else
+        fail "未找到 redis-cli 或 Docker,请先安装: apt install redis-server 或 docker"
+        info "以下为纯命令演示(不执行):"
+        cat << 'EOF'
+SET name "kainan"          # 设置键
+GET name                   # 读取键
+SET token "abc" EX 3600    # 设置+10分钟过期
+INCR counter               # 自增
+EOF
+        return 0
+    fi
 
-  # List(队列)
-  LPUSH queue task1 task2         左插入
-  RPOP queue                      右弹出(队列)
-  LRANGE queue 0 -1               查看全部
+    info "验证连接:"
+    cmd "$RCLI ping"
+    $RCLI ping
 
-  # Set(集合)
-  SADD tags python linux docker
-  SMEMBERS tags                   列出所有
-  SISMEMBER tags python           判断是否存在
+    echo ""
+    info "String 类型:"
+    cmd "$RCLI SET name kainan"
+    $RCLI SET name kainan
+    cmd "$RCLI GET name"
+    $RCLI GET name
+    cmd "$RCLI SET token abc EX 60"
+    $RCLI SET token abc EX 60
+    cmd "$RCLI TTL token  # 剩余过期时间(秒)"
+    $RCLI TTL token
 
-  # ZSet(有序集合/排行榜)
-  ZADD scores 95 kainan 88 zhangsan
-  ZREVRANGE scores 0 9 WITHSCORES  # Top10
+    echo ""
+    info "自增(计数器场景):"
+    $RCLI DEL counter >/dev/null
+    cmd "$RCLI INCR counter"
+    $RCLI INCR counter
+    cmd "$RCLI INCR counter"
+    $RCLI INCR counter
 
-运维命令:
-  INFO                            服务器信息
-  INFO memory                     内存使用
-  DBSIZE                          key数量
-  KEYS pattern                    查找key(生产慎用!)
-  SCAN 0 MATCH pattern COUNT 100  安全的key扫描
-  SLOWLOG GET 10                  慢查询日志
-  MONITOR                         实时监控所有命令(调试用)
-  CONFIG GET maxmemory            查看配置
-  CONFIG SET maxmemory 256mb      动态改配置
+    echo ""
+    info "Hash 类型(对象):"
+    cmd "$RCLI HSET user:1 name kainan age 22"
+    $RCLI HSET user:1 name kainan age 22
+    cmd "$RCLI HGETALL user:1"
+    $RCLI HGETALL user:1
 
-持久化:
-  RDB(快照)  → 配置 save 900 1 (900秒内1次修改就快照)
-  AOF(日志)  → appendonly yes (每条命令都记录)
-  混合模式   → aof-use-rdb-preamble yes (推荐)
+    echo ""
+    info "List 类型(队列):"
+    $RCLI DEL queue >/dev/null
+    cmd "$RCLI LPUSH queue task1 task2"
+    $RCLI LPUSH queue task1 task2
+    cmd "$RCLI RPOP queue  # 右弹出(先进先出)"
+    $RCLI RPOP queue
 
-哨兵(Sentinel)高可用:
-  sentinel monitor mymaster 127.0.0.1 6379 2
-  # 2个sentinel同意才故障转移
+    echo ""
+    info "运维命令:"
+    cmd "$RCLI DBSIZE  # key 总数"
+    $RCLI DBSIZE
+    cmd "$RCLI INFO memory | head -3  # 内存占用"
+    $RCLI INFO memory 2>/dev/null | grep -E "used_memory_human|maxmemory_human" || true
 
-集群(Cluster):
-  redis-cli --cluster create node1:6379 node2:6379 node3:6379
-  # 16384个slot分片
+    echo ""
+    info "[完成] Lab 10 Redis 实操结束"
+}
 
+# ============================================================
+# Lab 11: MySQL 数据库(实操)
+# ============================================================
+lab11_mysql() {
+    section "Lab 11: MySQL 数据库(实操)"
+
+    if ! has docker; then
+        fail "未找到 Docker,请先安装。或用: apt install mysql-server"
+        info "以下为 SQL 演示(不执行):"
+        cat << 'EOF'
+CREATE DATABASE mydb CHARACTER SET utf8mb4;
+USE mydb;
+CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50), age INT);
+INSERT INTO users (name, age) VALUES ('kainan', 22);
+SELECT * FROM users WHERE age > 20;
+EOF
+        return 0
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        fail "Docker daemon 未运行,请先启动 Docker Desktop 或 systemctl start docker"
+        return 0
+    fi
+
+    info "用 Docker 启动 MySQL 8"
+    docker rm -f lab-mysql >/dev/null 2>&1 || true
+    docker run -d --name lab-mysql \
+        -e MYSQL_ROOT_PASSWORD=root123456 \
+        -e MYSQL_DATABASE=mydb \
+        -p 3306:3306 mysql:8 >/dev/null 2>&1
+
+    info "等待 MySQL 就绪(最多30秒)..."
+    for i in $(seq 1 30); do
+        if docker exec lab-mysql mysqladmin ping -uroot -proot123456 >/dev/null 2>&1; then
+            info "MySQL 就绪"
+            break
+        fi
+        sleep 1
+    done
+
+    MYSQL="docker exec lab-mysql mysql -uroot -proot123456 mydb"
+
+    info "建表:"
+    cmd "$MYSQL -e 'CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50), age INT);'"
+    $MYSQL -e "CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50), age INT);"
+
+    info "插入数据:"
+    cmd "$MYSQL -e \"INSERT INTO users (name, age) VALUES ('kainan', 22), ('zhangsan', 25);\""
+    $MYSQL -e "INSERT INTO users (name, age) VALUES ('kainan', 22), ('zhangsan', 25);"
+
+    info "查询:"
+    cmd "$MYSQL -e 'SELECT * FROM users;'"
+    $MYSQL -e "SELECT * FROM users;"
+
+    info "条件查询:"
+    cmd "$MYSQL -e 'SELECT * FROM users WHERE age > 22;'"
+    $MYSQL -e "SELECT * FROM users WHERE age > 22;"
+
+    info "更新:"
+    cmd "$MYSQL -e \"UPDATE users SET age = 23 WHERE name = 'kainan';\""
+    $MYSQL -e "UPDATE users SET age = 23 WHERE name = 'kainan';"
+    $MYSQL -e "SELECT * FROM users WHERE name = 'kainan';"
+
+    info "备份演示(mysqldump):"
+    cmd "docker exec lab-mysql mysqldump -uroot -proot123456 mydb > /tmp/mydb-backup.sql"
+    docker exec lab-mysql mysqldump -uroot -proot123456 mydb > /tmp/mydb-backup.sql 2>/dev/null
+    info "备份文件: /tmp/mydb-backup.sql ($(wc -l < /tmp/mydb-backup.sql) 行)"
+
+    echo ""
+    warn "演示结束,清理容器: docker rm -f lab-mysql"
+    info "[完成] Lab 11 MySQL 实操结束"
+}
+
+# ============================================================
+# Lab 12: Ansible 批量管理(实操)
+# ============================================================
+lab12_ansible() {
+    section "Lab 12: Ansible 批量管理(实操)"
+
+    if ! has ansible; then
+        fail "未找到 ansible,请先安装: pip install ansible (或 apt install ansible)"
+        info "以下为命令演示(不执行):"
+        cat << 'EOF'
+ansible localhost -m ping                          # 测试本机连通
+ansible localhost -m shell -a "uptime"             # 执行命令
+ansible localhost -m file -a "path=/tmp/t state=directory"  # 创建目录
+EOF
+        return 0
+    fi
+
+    info "Ad-hoc: 测试本机连通(ping 模块)"
+    cmd "ansible localhost -m ping"
+    ansible localhost -m ping 2>&1 | tail -6
+
+    echo ""
+    info "Ad-hoc: 执行 shell 命令"
+    cmd "ansible localhost -m shell -a 'uptime'"
+    ansible localhost -m shell -a "uptime" 2>&1 | tail -4
+
+    echo ""
+    info "Ad-hoc: 用 file 模块创建目录"
+    cmd "ansible localhost -m file -a 'path=/tmp/ansible-lab state=directory'"
+    ansible localhost -m file -a "path=/tmp/ansible-lab state=directory" 2>&1 | tail -4
+    info "验证: $(ls -ld /tmp/ansible-lab 2>/dev/null || echo '已创建 /tmp/ansible-lab')"
+
+    echo ""
+    info "[完成] Lab 12 Ansible 实操结束"
+}
+
+# ============================================================
+# Lab 13: 监控(实操, psutil)
+# ============================================================
+lab13_monitor() {
+    section "Lab 13: 系统监控(实操, psutil)"
+
+    PY="python3"
+    has python3 || PY="python"
+
+    if ! $PY -c "import psutil" >/dev/null 2>&1; then
+        warn "未安装 psutil,尝试安装..."
+        $PY -m pip install psutil -q 2>&1 | tail -1 || {
+            fail "安装失败,请手动执行: pip install psutil"
+            return 0
+        }
+    fi
+
+    info "采集 CPU / 内存 / 磁盘实时指标:"
+    $PY - << 'PYEOF'
+import psutil
+import time
+
+print("采集系统指标(2次采样):\n")
+for i in range(2):
+    cpu = psutil.cpu_percent(interval=1)
+    mem = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+    net = psutil.net_io_counters()
+
+    print(f"--- 第{i+1}次采样 ---")
+    print(f"CPU 使用率 : {cpu}%")
+    print(f"内存       : {mem.used/1024**3:.1f}G / {mem.total/1024**3:.1f}G ({mem.percent}%)")
+    print(f"磁盘       : {disk.used/1024**3:.1f}G / {disk.total/1024**3:.1f}G ({disk.percent}%)")
+    print(f"网络       : 发送 {net.bytes_sent/1024**2:.1f}M / 接收 {net.bytes_recv/1024**2:.1f}M")
+    print(f"进程总数   : {len(psutil.pids())}")
+    print()
+    if i == 0:
+        time.sleep(0.5)
+
+# Top 3 内存占用进程
+print("Top 3 内存占用进程:")
+procs = []
+for p in psutil.process_iter(['name', 'memory_info']):
+    try:
+        procs.append((p.info['name'], p.info['memory_info'].rss))
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+procs.sort(key=lambda x: x[1], reverse=True)
+for name, rss in procs[:3]:
+    print(f"  {name:20s} {rss/1024**2:.0f} MB")
+PYEOF
+
+    echo ""
+    info "对应 Prometheus 指标(node_exporter):"
+    cat << 'EOF'
+  node_cpu_seconds_total       CPU 累计秒数
+  node_memory_MemAvailable_bytes  可用内存
+  node_filesystem_avail_bytes     可用磁盘
+  # 生产环境用 node_exporter 暴露, Prometheus 拉取, Grafana 展示
 EOF
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 11: MySQL 数据库${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+    info "[完成] Lab 13 监控实操结束"
+}
 
-安装: apt install mysql-server  或  docker run -d -e MYSQL_ROOT_PASSWORD=123456 mysql:8
+# ============================================================
+# Lab 14: 日志分析(实操)
+# ============================================================
+lab14_log() {
+    section "Lab 14: 日志分析(实操)"
 
-基本操作:
-  mysql -u root -p                           连接
-  mysql -h 192.168.1.100 -u root -p          远程连接
+    info "生成一份真实风格的 Nginx 访问日志样例:"
+    LOG=/tmp/lab-access.log
+    cat > "$LOG" << 'EOF'
+192.168.1.10 - - [09/Sep/2026:17:00:01 +0800] "GET /index.html HTTP/1.1" 200 1024 "-" "Mozilla/5.0"
+192.168.1.11 - - [09/Sep/2026:17:00:02 +0800] "POST /api/login HTTP/1.1" 500 512 "-" "curl/7.68"
+192.168.1.12 - - [09/Sep/2026:17:00:03 +0800] "GET /api/users HTTP/1.1" 200 2048 "-" "Mozilla/5.0"
+192.168.1.10 - - [09/Sep/2026:17:00:04 +0800] "GET /static/app.js HTTP/1.1" 200 4096 "-" "Mozilla/5.0"
+192.168.1.13 - - [09/Sep/2026:17:00:05 +0800] "GET /api/data HTTP/1.1" 502 0 "-" "curl/7.68"
+192.168.1.14 - - [09/Sep/2026:17:00:06 +0800] "GET /health HTTP/1.1" 200 128 "-" "curl/7.68"
+192.168.1.11 - - [09/Sep/2026:17:00:07 +0800] "POST /api/login HTTP/1.1" 401 256 "-" "curl/7.68"
+192.168.1.15 - - [09/Sep/2026:17:00:08 +0800] "GET /index.html HTTP/1.1" 200 1024 "-" "Mozilla/5.0"
+EOF
+    info "样例文件: $LOG ($(wc -l < "$LOG") 行)"
 
-  # 库操作
-  SHOW DATABASES;                            列出数据库
-  CREATE DATABASE mydb CHARACTER SET utf8mb4;
-  USE mydb;                                  切换数据库
-  DROP DATABASE mydb;                        删除数据库
+    echo ""
+    info "1. 统计状态码分布(grep + awk + sort):"
+    cmd "awk '{print \$9}' $LOG | sort | uniq -c | sort -rn"
+    awk '{print $9}' "$LOG" | sort | uniq -c | sort -rn
 
-  # 表操作
-  SHOW TABLES;                               列出表
-  CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50), age INT);
-  DESCRIBE users;                            查看表结构
-  ALTER TABLE users ADD email VARCHAR(100);  加字段
+    echo ""
+    info "2. 找出错误请求(5xx):"
+    cmd "awk '\$9 >= 500' $LOG"
+    awk '$9 >= 500' "$LOG"
 
-  # CRUD
-  INSERT INTO users (name, age) VALUES ('kainan', 22);
-  SELECT * FROM users WHERE age > 20;
-  UPDATE users SET age = 23 WHERE name = 'kainan';
-  DELETE FROM users WHERE id = 1;
+    echo ""
+    info "3. 统计每个 IP 的请求数:"
+    cmd "awk '{print \$1}' $LOG | sort | uniq -c | sort -rn"
+    awk '{print $1}' "$LOG" | sort | uniq -c | sort -rn
 
-运维命令:
-  SHOW PROCESSLIST;              查看当前连接
-  SHOW STATUS LIKE 'Threads%';   连接数
-  SHOW VARIABLES LIKE 'max_connections';  最大连接数
-  SET GLOBAL max_connections = 500;       修改(临时)
-  SHOW ENGINE INNODB STATUS;     InnoDB状态
-  EXPLAIN SELECT ...;            执行计划(优化慢查询)
+    echo ""
+    info "4. 提取访问最多的 URL:"
+    cmd "awk '{print \$7}' $LOG | sort | uniq -c | sort -rn | head -3"
+    awk '{print $7}' "$LOG" | sort | uniq -c | sort -rn | head -3
 
-备份恢复:
-  mysqldump -u root -p mydb > backup.sql     备份
-  mysqldump -u root -p --all-databases > all.sql  全量备份
-  mysql -u root -p mydb < backup.sql         恢复
-  mysqldump -u root -p mydb users > users.sql # 单表备份
+    echo ""
+    info "5. 按小时统计请求量:"
+    cmd "grep -oE '[0-9]{2}/Sep/2026:[0-9]{2}' $LOG | cut -d: -f2 | sort | uniq -c"
+    grep -oE '[0-9]{2}/Sep/2026:[0-9]{2}' "$LOG" | cut -d: -f2 | sort | uniq -c
 
-主从复制:
-  # 主库 my.cnf
-  server-id=1
-  log-bin=mysql-bin
-  binlog-do-db=mydb
+    info "[完成] Lab 14 日志分析实操结束"
+}
 
-  # 从库 my.cnf
-  server-id=2
-  relay-log=relay-bin
+# ============================================================
+# Lab 15: CI/CD(实操)
+# ============================================================
+lab15_cicd() {
+    section "Lab 15: CI/CD(实操)"
 
-  # 从库执行
-  CHANGE MASTER TO MASTER_HOST='192.168.1.100', MASTER_USER='repl', MASTER_PASSWORD='xxx';
-  START SLAVE;
-  SHOW SLAVE STATUS\G
+    info "本 Lab 演示 GitHub Actions 流水线,实际运行在 GitHub 云端"
+    echo ""
+    info "生成一个最小 CI 工作流文件(与仓库 .github/workflows/ci.yml 同类):"
 
+    cat > /tmp/lab-ci-demo.yml << 'EOF'
+# .github/workflows/ci.yml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 运行测试脚本
+        run: |
+          echo "开始构建..."
+          bash build.sh
+          echo "构建完成"
+
+      - name: 语法检查
+        run: |
+          for f in *.sh; do bash -n "$f" || exit 1; done
+          echo "语法检查通过"
 EOF
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 12: Ansible 批量管理${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+    info "工作流文件内容:"
+    cat /tmp/lab-ci-demo.yml
 
-安装: pip install ansible  或  apt install ansible
+    echo ""
+    info "CI/CD 流水线概念(面试重点):"
+    cat << 'EOF'
+  CI(持续集成)  代码提交后自动构建+测试, 快速发现问题
+  CD(持续交付)  测试通过后自动部署到测试/生产环境
 
-核心概念:
-  控制节点   你操作的机器
-  被管节点   被管理的服务器(只需SSH+Python)
-  Inventory  主机清单(哪些机器)
-  Playbook   YAML剧本(要做什么)
-  Module     模块(具体操作单元)
-  Role       角色(可复用的任务集合)
+  典型流水线阶段:
+    拉代码 → 构建 → 测试 → 推送镜像 → 部署
 
-Inventory 文件 /etc/ansible/hosts:
-  [webservers]
-  web1 ansible_host=192.168.1.101 ansible_user=root
-  web2 ansible_host=192.168.1.102 ansible_user=root
-
-  [dbservers]
-  db1 ansible_host=192.168.1.201
-
-  [all:vars]
-  ansible_python_interpreter=/usr/bin/python3
-
-Ad-hoc 命令(一次性):
-  ansible all -m ping                           测试连通性
-  ansible webservers -m shell -a "uptime"       执行命令
-  ansible webservers -m copy -a "src=./app.conf dest=/etc/"  拷贝文件
-  ansible webservers -m service -a "name=nginx state=restarted"  重启服务
-  ansible webservers -m yum -a "name=nginx state=present"  安装软件
-  ansible webservers -m file -a "path=/opt/data state=directory mode=0755"
-
-Playbook 示例:
-  # deploy.yml
-  ---
-  - hosts: webservers
-    become: yes
-    vars:
-      app_version: "1.2.3"
-    tasks:
-      - name: 安装nginx
-        apt: name=nginx state=present
-
-      - name: 拷贝配置
-        template: src=nginx.conf.j2 dest=/etc/nginx/nginx.conf
-        notify: 重启nginx
-
-      - name: 启动nginx
-        service: name=nginx state=started enabled=yes
-
-    handlers:
-      - name: 重启nginx
-        service: name=nginx state=restarted
-
-执行: ansible-playbook deploy.yml
-检查: ansible-playbook deploy.yml --check   # dry run
-调试: ansible-playbook deploy.yml -vvv      # 详细输出
-
-Role 结构:
-  roles/
-  └── nginx/
-      ├── tasks/main.yml
-      ├── handlers/main.yml
-      ├── templates/nginx.conf.j2
-      ├── files/
-      ├── vars/main.yml
-      └── defaults/main.yml
-
+  主流工具:
+    GitHub Actions   GitHub 原生, 免费额度, 上手快
+    Jenkins          传统自建, 可定制性强
+    GitLab CI        GitLab 集成
 EOF
 
+    info "[完成] Lab 15 CI/CD 实操结束"
+}
+
+# ============================================================
+# 主流程
+# ============================================================
 echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 13: Prometheus + Grafana 监控${NC}"
+echo -e "${CYAN}  Lab 10-15: 中级工具实操合集${NC}"
 echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+echo ""
 
-架构:
-  应用 → exporter暴露指标 → prometheus拉取 → grafana展示
-                              ↓
-                          alertmanager → 钉钉/企微/邮件
+lab10_redis
+lab11_mysql
+lab12_ansible
+lab13_monitor
+lab14_log
+lab15_cicd
 
-Docker一键部署:
-  docker run -d --name prometheus -p 9090:9090 prom/prometheus
-  docker run -d --name grafana -p 3000:3000 grafana/grafana
-  docker run -d --name node-exporter -p 9100:9100 prom/node-exporter
-
-Prometheus 配置 prometheus.yml:
-  global:
-    scrape_interval: 15s
-
-  scrape_configs:
-    - job_name: 'node'
-      static_configs:
-        - targets: ['192.168.1.101:9100', '192.168.1.102:9100']
-
-    - job_name: 'nginx'
-      static_configs:
-        - targets: ['192.168.1.101:9113']
-
-常用PromQL:
-  up                                    目标是否存活
-  rate(http_requests_total[5m])         5分钟请求速率
-  node_memory_MemAvailable_bytes        可用内存
-  100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)  CPU使用率
-  node_filesystem_avail_bytes           可用磁盘
-
-常用Exporter:
-  node_exporter     系统指标(CPU/内存/磁盘/网络)
-  mysqld_exporter   MySQL指标
-  redis_exporter    Redis指标
-  nginx_exporter    Nginx指标
-  blackbox_exporter 黑盒探测(HTTP/TCP/ICMP)
-
-Grafana:
-  默认账号: admin / admin
-  常用Dashboard ID:
-    1860  Node Exporter Full
-    763   Redis Dashboard
-    7362  MySQL Overview
-
-告警规则 alert_rules.yml:
-  groups:
-    - name: host
-      rules:
-        - alert: HighCPU
-          expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-          for: 5m
-          labels: { severity: warning }
-          annotations:
-            summary: "CPU使用率超过80%"
-
-EOF
-
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 14: ELK 日志系统${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
-
-架构:
-  应用日志 → Filebeat采集 → Logstash处理 → Elasticsearch存储 → Kibana查询
-  (简化版: Filebeat → Elasticsearch → Kibana = EFK)
-
-Docker部署ELK:
-  # Elasticsearch
-  docker run -d --name es -p 9200:9200 -e "discovery.type=single-node" elasticsearch:8.x
-
-  # Kibana
-  docker run -d --name kibana -p 5601:5601 -e "ELASTICSEARCH_HOSTS=http://es:9200" kibana:8.x
-
-  # Filebeat(每台被管机器装)
-  docker run -d --name filebeat -v /var/log:/var/log filebeat:8.x
-
-Filebeat 配置 filebeat.yml:
-  filebeat.inputs:
-    - type: log
-      paths:
-        - /var/log/nginx/access.log
-        - /var/log/nginx/error.log
-
-  output.elasticsearch:
-    hosts: ["192.168.1.100:9200"]
-    index: "nginx-%{+yyyy.MM.dd}"
-
-  # 或输出到Logstash
-  output.logstash:
-    hosts: ["192.168.1.100:5044"]
-
-Logstash 配置 logstash.conf:
-  input {
-    beats { port => 5044 }
-  }
-  filter {
-    grok {
-      match => { "message" => "%{COMBINEDAPACHELOG}" }
-    }
-    date {
-      match => ["timestamp", "dd/MMM/yyyy:HH:mm:ss Z"]
-    }
-  }
-  output {
-    elasticsearch {
-      hosts => ["localhost:9200"]
-      index => "web-%{+YYYY.MM.dd}"
-    }
-  }
-
-Elasticsearch 常用API:
-  curl localhost:9200/_cat/health           集群健康
-  curl localhost:9200/_cat/indices          列出索引
-  curl localhost:9200/_cat/nodes            列出节点
-  curl localhost:9200/nginx-*/_search?q=500 搜索
-
-EOF
-
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 15: Jenkins + Harbor CI/CD${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
-
-Jenkins (CI/CD流水线):
-  docker run -d --name jenkins -p 8080:8080 -p 50000:50000 \
-    -v jenkins_home:/var/jenkins_home jenkins/jenkins:lts
-
-  初始密码: docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
-
-  Pipeline 示例(Jenkinsfile):
-  pipeline {
-      agent any
-      stages {
-          stage('拉代码') {
-              steps { git 'https://github.com/RM3836/app.git' }
-          }
-          stage('构建') {
-              steps { sh 'docker build -t myapp:${BUILD_NUMBER} .' }
-          }
-          stage('测试') {
-              steps { sh 'docker run --rm myapp:${BUILD_NUMBER} pytest' }
-          }
-          stage('推送镜像') {
-              steps {
-                  sh 'docker tag myapp:${BUILD_NUMBER} harbor.local/myproject/myapp:${BUILD_NUMBER}'
-                  sh 'docker push harbor.local/myproject/myapp:${BUILD_NUMBER}'
-              }
-          }
-          stage('部署') {
-              steps { sh 'kubectl apply -f k8s/deployment.yaml' }
-          }
-      }
-  }
-
-Harbor (企业级镜像仓库):
-  # 安装(需要docker-compose)
-  wget https://github.com/goharbor/harbor/releases/latest/download/harbor-offline-installer.tgz
-  tar xzf harbor-offline-installer.tgz && cd harbor
-  cp harbor.yml.tmpl harbor.yml  # 编辑hostname/https/password
-  ./install.sh --with-trivy       # --with-trivy启用漏洞扫描
-
-  使用:
-  docker login harbor.local
-  docker tag myapp:v1 harbor.local/myproject/myapp:v1
-  docker push harbor.local/myproject/myapp:v1
-
-  功能: 镜像仓库 + 漏洞扫描 + 镜像签名 + 复制策略 + RBAC权限
-
-Nexus (制品仓库):
-  docker run -d --name nexus -p 8081:8081 sonatype/nexus3
-  # 支持: Maven/npm/Docker/PyPI/npm私有仓库
-
-EOF
-
-echo -e "${GREEN}[完成] Lab 10-15 中级工具合集 实战结束${NC}"
+echo ""
+echo -e "${GREEN}[全部完成] Lab 10-15 中级工具实操合集结束${NC}"

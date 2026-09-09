@@ -79,16 +79,16 @@ bash 02-scp-rsync.sh
 | 10 | Redis | 缓存 / 持久化 / 高可用 | `10-mid-tools.sh` | 否 | ✅ |
 | 11 | MySQL | 数据库 / 备份 / 主从 | `10-mid-tools.sh` | 否 | ✅ |
 | 12 | Ansible | 批量管理 / Playbook / Role | `10-mid-tools.sh` | 否 | ✅ |
-| 13 | Prometheus | 监控 / PromQL / 告警 | `10-mid-tools.sh` | 否 | ✅ |
-| 14 | ELK | 日志采集 / 检索 | `10-mid-tools.sh` | 否 | ✅ |
-| 15 | Jenkins+Harbor | CI/CD / 镜像仓库 | `10-mid-tools.sh` | 否 | ✅ |
+| 13 | 监控 | psutil 实时采集 CPU/内存/磁盘 | `10-mid-tools.sh` | 否 | ✅ |
+| 14 | 日志分析 | grep/awk 分析 Nginx 日志 | `10-mid-tools.sh` | 否 | ✅ |
+| 15 | CI/CD | GitHub Actions 流水线 | `10-mid-tools.sh` | 否 | ✅ |
 | 16 | Kubernetes | 集群 / Pod / Deployment | `16-advanced.sh` | 否 | ✅ |
 | 17 | Helm | K8s 包管理 | `16-advanced.sh` | 否 | ✅ |
 | 18 | LVS+HAProxy | 四/七层负载均衡 | `16-advanced.sh` | 否 | ✅ |
 | 19 | Consul+Nacos | 服务发现 / 配置中心 | `16-advanced.sh` | 否 | ✅ |
 | 20 | Supervisor | 进程管理 | `16-advanced.sh` | 否 | ✅ |
 
-> 说明：Lab 10-15 合并为 `10-mid-tools.sh`，Lab 16-20 合并为 `16-advanced.sh`，与 `index.sh` 中展示的 20 个 Lab 一一对应。
+> 说明：Lab 10-15 合并为 `10-mid-tools.sh`（已升级为实操版，含真实可运行的 Redis/MySQL/Ansible/监控/日志/CI-CD），Lab 16-20 合并为 `16-advanced.sh`，与 `index.sh` 中展示的 20 个 Lab 一一对应。
 
 ---
 
@@ -129,8 +129,8 @@ bash 02-scp-rsync.sh
 **Q2：Docker 命令提示找不到？**
 Docker Desktop 的 CLI 默认不进 PATH。参考 `~/.docker/daemon.json` 配置镜像加速后重启 Docker Desktop。
 
-**Q3：阶段二脚本为什么没有真实输出？**
-Redis / MySQL / Ansible 等需要先安装对应软件，脚本里已给出安装命令（`apt install` 或 `docker run`），装好后再跑。
+**Q3：阶段二脚本运行时提示缺少依赖？**
+Lab 10-15 已升级为实操版。Redis/MySQL/Ansible 会在检测到缺少依赖时给出安装命令（`apt install` 或 `docker run`）并优雅降级为命令演示；监控（psutil）会自动尝试安装；日志分析和 CI/CD 无需额外依赖，可直接运行。装好依赖后重跑即可看到真实输出。
 
 **Q4：`set -e` 导致脚本中途退出？**
 某些演示命令（如 `tcpdump` 抓包）在无包时会返回非零退出码，脚本已用 `|| true` 兜底。若仍中途退出，可临时注释 `set -e` 排查。
