@@ -1,327 +1,363 @@
 #!/bin/bash
 # ============================================
-# DevOps实战 Lab 16-20: 高级工具合集
+# DevOps实战 Lab 16-20: 高级工具合集(实操版)
 # 运行: bash 16-advanced.sh
 # ============================================
+
+set -e
 
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 16: Kubernetes (K8s)${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+# ---------- 工具函数 ----------
+info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+fail()  { echo -e "${RED}[ERROR]${NC} $1"; }
+cmd()   { echo -e "${YELLOW}\$ $1${NC}"; }
 
+section() {
+    echo ""
+    echo -e "${CYAN}========================================${NC}"
+    echo -e "${CYAN}  $1${NC}"
+    echo -e "${CYAN}========================================${NC}"
+}
+
+has() { command -v "$1" >/dev/null 2>&1; }
+
+# ============================================================
+# Lab 16: Kubernetes(实操, kind)
+# ============================================================
+lab16_k8s() {
+    section "Lab 16: Kubernetes(实操, kind)"
+
+    cat << 'EOF'
 核心概念:
-  Pod           最小部署单元(1个或多个容器)
-  Deployment    管理Pod(副本数/滚动更新/回滚)
-  Service       服务发现+负载均衡(给Pod一个稳定IP)
-  Namespace     命名空间(隔离资源)
-  ConfigMap     配置数据(非敏感)
-  Secret        敏感数据(密码/证书,base64编码)
-  Ingress       入口(HTTP/HTTPS路由)
-  PV/PVC        持久化存储
-  Node          工作节点
-  Master        控制节点(API Server/etcd/Scheduler/Controller Manager)
-
-本地学习环境:
-  # minikube (单节点)
-  minikube start --driver=docker
-
-  # kind (Docker-in-Docker)
-  kind create cluster --name lab
-
-基本操作:
-  kubectl get nodes                      查看节点
-  kubectl get pods -A                    所有命名空间的Pod
-  kubectl get pods -n default            指定命名空间
-  kubectl get svc                        查看Service
-  kubectl get deploy                     查看Deployment
-  kubectl describe pod pod名             Pod详情
-  kubectl logs pod名                     查看日志
-  kubectl logs -f pod名                  实时日志
-  kubectl exec -it pod名 -- bash         进入Pod
-  kubectl apply -f deployment.yaml       创建/更新资源
-  kubectl delete -f deployment.yaml      删除资源
-  kubectl scale deploy app --replicas=5  扩容
-  kubectl rollout history deploy app     查看版本历史
-  kubectl rollout undo deploy app        回滚
-
-Deployment 示例:
-  apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: myapp
-    namespace: default
-  spec:
-    replicas: 3
-    selector:
-      matchLabels:
-        app: myapp
-    template:
-      metadata:
-        labels:
-          app: myapp
-      spec:
-        containers:
-        - name: myapp
-          image: myapp:v1
-          ports:
-          - containerPort: 8080
-          resources:
-            requests: { cpu: "100m", memory: "128Mi" }
-            limits:   { cpu: "500m", memory: "256Mi" }
-          readinessProbe:
-            httpGet: { path: /health, port: 8080 }
-          livenessProbe:
-            httpGet: { path: /health, port: 8080 }
-          env:
-          - name: APP_ENV
-            valueFrom:
-              configMapKeyRef: { name: app-config, key: env }
-
-Service 示例:
-  apiVersion: v1
-  kind: Service
-  metadata:
-    name: myapp-svc
-  spec:
-    selector:
-      app: myapp
-    ports:
-    - port: 80
-      targetPort: 8080
-    type: ClusterIP    # ClusterIP(内部)/NodePort(节点端口)/LoadBalancer(云LB)
-
-Ingress 示例:
-  apiVersion: networking.k8s.io/v1
-  kind: Ingress
-  metadata:
-    name: myapp-ingress
-    annotations:
-      nginx.ingress.kubernetes.io/rewrite-target: /
-  spec:
-    rules:
-    - host: app.example.com
-      http:
-        paths:
-        - path: /
-          pathType: Prefix
-          backend:
-            service:
-              name: myapp-svc
-              port: { number: 80 }
-
+  Pod         最小部署单元(1个或多个容器)
+  Deployment  管理 Pod(副本数/滚动更新/回滚)
+  Service     服务发现 + 负载均衡(给 Pod 稳定 IP)
+  Namespace   资源隔离
+  ConfigMap   非敏感配置 / Secret 敏感配置
+  Ingress     HTTP(S) 入口路由
 EOF
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 17: Helm (K8s包管理器)${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+    if ! has kubectl; then
+        fail "未找到 kubectl,请先安装: 见 https://kubernetes.io/zh-cn/docs/tasks/tools/"
+        info "以下为 YAML 演示(不执行)"
+        cat << 'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: myapp }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: myapp } }
+  template:
+    metadata: { labels: { app: myapp } }
+    spec:
+      containers:
+      - name: myapp
+        image: nginx:alpine
+        ports: [ { containerPort: 80 } ]
+EOF
+        return 0
+    fi
 
-安装:
-  curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    # 检测是否已有可用的 K8s 集群
+    if kubectl cluster-info >/dev/null 2>&1; then
+        info "检测到可用的 Kubernetes 集群"
+    elif has docker && docker info >/dev/null 2>&1 && has kind; then
+        info "用 kind 启动单节点集群(复用 Docker daemon, 无需虚拟机)"
+        cmd "kind create cluster --name lab"
+        kind create cluster --name lab --wait 120s
+        warn "演示结束后清理: kind delete cluster --name lab"
+    elif has docker && docker info >/dev/null 2>&1; then
+        warn "检测到 Docker 但未装 kind。安装: curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64 && chmod +x kind"
+        warn "kind 相比 minikube 无需虚拟机, 直接复用 Docker daemon, 资源占用更低"
+        info "以下为命令演示(不执行)"
+        cat << 'EOF'
+kind create cluster --name lab
+kubectl get nodes
+EOF
+        return 0
+    else
+        fail "无 kubectl 且无 Docker/kind 环境。minikube 需虚拟机, 推荐 kind(复用 Docker)"
+        return 0
+    fi
 
-基本操作:
-  helm repo add bitnami https://charts.bitnami.com/bitnami   添加仓库
-  helm repo update                                             更新仓库
-  helm search repo nginx                                       搜索chart
-  helm install my-nginx bitnami/nginx                          安装
-  helm list                                                    列出已安装
-  helm upgrade my-nginx bitnami/nginx --set replicaCount=3     升级
-  helm rollback my-nginx 1                                     回滚到版本1
-  helm uninstall my-nginx                                      卸载
-  helm show chart bitnami/nginx                                查看chart信息
-  helm template my-nginx bitnami/nginx                         渲染模板(不安装)
-
-自定义Chart:
-  helm create mychart                创建chart骨架
-  mychart/
-  ├── Chart.yaml         # chart元数据
-  ├── values.yaml        # 默认值
-  ├── templates/         # 模板文件
-  │   ├── deployment.yaml
-  │   ├── service.yaml
-  │   └── _helpers.tpl
-  └── charts/            # 依赖的子chart
-
-  helm install myrelease ./mychart -f custom-values.yaml   用自定义值安装
-
+    info "部署一个 Nginx 应用(Deployment + Service):"
+    cat > /tmp/lab-k8s.yaml << 'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: lab-nginx }
+  template:
+    metadata:
+      labels: { app: lab-nginx }
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-nginx-svc
+spec:
+  selector: { app: lab-nginx }
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP
 EOF
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 18: LVS + HAProxy 负载均衡${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+    cmd "kubectl apply -f /tmp/lab-k8s.yaml"
+    kubectl apply -f /tmp/lab-k8s.yaml
 
-LVS (Linux Virtual Server, 四层):
-  # 工作模式
-  DR(直接路由)   性能最高,Real Server直接回客户端
-  NAT            最简单,所有流量经过LVS
-  TUN(隧道)      跨网段,IP隧道封装
+    info "等待 Pod 就绪..."
+    kubectl wait --for=condition=ready pod -l app=lab-nginx --timeout=90s 2>/dev/null || kubectl rollout status deploy/lab-nginx --timeout=90s
 
-  # 调度算法
-  rr   轮询        wrr  加权轮询
-  lc   最少连接     wlc  加权最少连接(默认)
-  sh   源哈希       dh   目标哈希
+    echo ""
+    info "查看资源:"
+    cmd "kubectl get pods,deploy,svc"
+    kubectl get pods,deploy,svc
 
-  # 管理工具: ipvsadm
-  ipvsadm -A -t 192.168.1.100:80 -s wlc          添加虚拟服务
-  ipvsadm -a -t 192.168.1.100:80 -r 192.168.1.101:80 -g -w 3  添加后端(DR模式,-g)
-  ipvsadm -Ln                                     查看规则
-  ipvsadm --stats                                 查看统计
+    echo ""
+    info "扩容到 4 副本:"
+    cmd "kubectl scale deploy lab-nginx --replicas=4"
+    kubectl scale deploy lab-nginx --replicas=4
+    kubectl get pods -l app=lab-nginx
 
-HAProxy (四/七层):
-  安装: apt install haproxy
+    echo ""
+    info "查看 Pod 日志:"
+    POD=$(kubectl get pod -l app=lab-nginx -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    [ -n "$POD" ] && kubectl logs "$POD" 2>/dev/null | head -3
 
-  配置 /etc/haproxy/haproxy.cfg:
-    global
-        maxconn 50000
-        log /dev/log local0
+    echo ""
+    info "清理演示资源(保留集群):"
+    kubectl delete -f /tmp/lab-k8s.yaml 2>/dev/null
 
-    defaults
-        mode http
-        timeout connect 5s
-        timeout client 30s
-        timeout server 30s
-        option httplog
+    info "[完成] Lab 16 K8s 实操结束"
+}
 
-    frontend http-in
-        bind *:80
-        acl is_api path_beg /api
-        use_backend api-servers if is_api
-        default_backend web-servers
+# ============================================================
+# Lab 17: Helm(实操)
+# ============================================================
+lab17_helm() {
+    section "Lab 17: Helm(实操)"
 
-    backend web-servers
-        balance roundrobin
-        option httpchk GET /health
-        server web1 192.168.1.101:8080 check inter 3s fall 3 rise 2 weight 3
-        server web2 192.168.1.102:8080 check inter 3s fall 3 rise 2 weight 2
-        server web3 192.168.1.103:8080 check inter 3s fall 3 rise 2 backup
-
-    backend api-servers
-        balance leastconn
-        server api1 192.168.1.201:3000 check
-        server api2 192.168.1.202:3000 check
-
-    listen stats
-        bind *:8404
-        stats enable
-        stats uri /stats
-        stats auth admin:password
-
-  管理:
-    systemctl restart haproxy
-    haproxy -c -f /etc/haproxy/haproxy.cfg   检查配置
-
-负载均衡对比(面试):
-  工具          层级    性能    功能             场景
-  LVS           L4      最高    简单转发         大规模入口
-  HAProxy       L4/L7   高      ACL/健康检查     API网关/微服务
-  Nginx         L7      中      反向代理/静态    Web服务器
-
+    if ! has helm; then
+        fail "未找到 helm,安装: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+        info "以下为命令演示(不执行)"
+        cat << 'EOF'
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm install my-nginx bitnami/nginx
+helm list
+helm upgrade my-nginx bitnami/nginx --set replicaCount=3
+helm rollback my-nginx 1
+helm uninstall my-nginx
 EOF
+        return 0
+    fi
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 19: Consul + Nacos 服务发现${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+    if ! kubectl cluster-info >/dev/null 2>&1; then
+        fail "需要先有 K8s 集群(见 Lab 16), 否则 Helm 无处安装"
+        return 0
+    fi
 
-Consul (HashiCorp):
-  功能: 服务注册发现 + KV配置中心 + 健康检查 + 多数据中心
+    info "添加 bitnami 仓库:"
+    cmd "helm repo add bitnami https://charts.bitnami.com/bitnami"
+    helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
+    helm repo update 2>/dev/null || true
 
-  docker run -d --name consul -p 8500:8500 -p 8600:8600 consul agent -server -bootstrap -ui -client=0.0.0.0
-
-  # 注册服务
-  curl -X PUT http://localhost:8500/v1/agent/service/register -d '{
-    "ID": "web1",
-    "Name": "web",
-    "Tags": ["v1"],
-    "Address": "192.168.1.101",
-    "Port": 8080,
-    "Check": {
-      "HTTP": "http://192.168.1.101:8080/health",
-      "Interval": "10s"
+    info "安装 nginx chart:"
+    cmd "helm install lab-nginx bitnami/nginx"
+    helm install lab-nginx bitnami/nginx 2>&1 | head -20 || {
+        fail "安装失败(可能是镜像拉取问题, 检查镜像加速)"
+        return 0
     }
-  }'
 
-  # 查询服务
-  curl http://localhost:8500/v1/catalog/service/web
-  dig @127.0.0.1 -p 8600 web.service.consul SRV   # DNS查询
+    info "查看已安装的 release:"
+    cmd "helm list"
+    helm list
 
-  # KV配置
-  curl -X PUT http://localhost:8500/v1/kv/config/db_host -d '192.168.1.200'
-  curl http://localhost:8500/v1/kv/config/db_host?raw
+    info "卸载:"
+    cmd "helm uninstall lab-nginx"
+    helm uninstall lab-nginx 2>/dev/null
 
-Nacos (阿里):
-  功能: 服务注册发现 + 配置中心(支持动态推送)
+    info "[完成] Lab 17 Helm 实操结束"
+}
 
-  docker run -d --name nacos -p 8848:8848 -e MODE=standalone nacos/nacos-server
+# ============================================================
+# Lab 18: LVS + HAProxy 负载均衡
+# ============================================================
+lab18_lvs() {
+    section "Lab 18: LVS + HAProxy 负载均衡"
 
-  # 控制台: http://localhost:8848/nacos  账号nacos/nacos
+    if ! has ipvsadm; then
+        fail "未找到 ipvsadm(需 root)。安装: apt install ipvsadm"
+        info "以下为命令演示(不执行)"
+        cat << 'EOF'
+# LVS 四层负载均衡
+ipvsadm -A -t 192.168.1.100:80 -s wlc          # 添加虚拟服务(加权最少连接)
+ipvsadm -a -t 192.168.1.100:80 -r 192.168.1.101:80 -g -w 3  # 添加后端(DR模式)
+ipvsadm -Ln                                     # 查看规则
+ipvsadm --stats                                 # 查看统计
 
-  # 注册服务(Java SDK)
-  # NamingService naming = NamingFactory.createNamingService("127.0.0.1:8848");
-  # naming.registerInstance("my-service", "192.168.1.101", 8080);
-
-  # 配置管理(Java SDK)
-  # ConfigService config = ConfigFactory.createConfigService("127.0.0.1:8848");
-  # String content = config.getConfig("app.properties", "DEFAULT_GROUP", 3000);
-  # config.addListener("app.properties", "DEFAULT_GROUP", listener);  # 动态监听
-
-Consul vs Nacos:
-  特性          Consul            Nacos
-  语言生态      Go/多语言         Java/Spring Cloud
-  配置中心      KV(简单)          Data ID+Group(灵活)
-  健康检查      HTTP/TCP/gRPC/脚本 HTTP/TCP
-  多数据中心    原生支持          需额外配置
-  社区          国际主流          国内主流(阿里)
-
+# HAProxy 四/七层
+# 配置 /etc/haproxy/haproxy.cfg 的 backend 段
 EOF
+        return 0
+    fi
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  Lab 20: Supervisor 进程管理${NC}"
-echo -e "${CYAN}========================================${NC}"
-cat << 'EOF'
+    [ "$(id -u)" = "0" ] || {
+        fail "ipvsadm 需要 root 权限, 请: sudo bash 16-advanced.sh"
+        return 0
+    }
 
-安装: pip install supervisor  或  apt install supervisor
+    info "查看当前 LVS 规则:"
+    cmd "ipvsadm -Ln"
+    ipvsadm -Ln 2>/dev/null || echo "(暂无规则)"
 
-配置 /etc/supervisor/conf.d/myapp.conf:
-  [program:myapp]
-  command=python3 /opt/app/main.py
-  directory=/opt/app
-  user=www-data
-  autostart=true
-  autorestart=true
-  startretries=3
-  redirect_stderr=true
-  stdout_logfile=/var/log/myapp.log
-  stdout_logfile_maxbytes=10MB
-  stdout_logfile_backups=5
-  environment=APP_ENV="production",DB_HOST="127.0.0.1"
+    info "[完成] Lab 18 LVS 实操结束(完整部署需多台后端, 本 Lab 演示命令)"
+}
 
-管理命令:
-  supervisorctl reread              读取新配置
-  supervisorctl update              更新(启停变化的)
-  supervisorctl start myapp         启动
-  supervisorctl stop myapp          停止
-  supervisorctl restart myapp       重启
-  supervisorctl status              查看所有状态
-  supervisorctl tail -f myapp       实时看日志
+# ============================================================
+# Lab 19: Consul 服务发现(实操)
+# ============================================================
+lab19_consul() {
+    section "Lab 19: Consul 服务发现(实操)"
 
-批量管理:
-  [group:webapps]
-  programs=myapp,worker,scheduler
+    if ! has docker || ! docker info >/dev/null 2>&1; then
+        fail "需要 Docker(且 daemon 运行中)来起 Consul 容器"
+        info "以下为命令演示(不执行)"
+        cat << 'EOF'
+docker run -d --name consul -p 8500:8500 consul agent -server -bootstrap -ui -client=0.0.0.0
+curl -X PUT http://localhost:8500/v1/agent/service/register -d '{...}'
+curl http://localhost:8500/v1/catalog/service/web
+EOF
+        return 0
+    fi
 
-  supervisorctl start webapps:*     启动组内所有
-  supervisorctl stop webapps:*      停止组内所有
+    info "用 Docker 启动 Consul(单节点 server):"
+    docker rm -f lab-consul >/dev/null 2>&1 || true
+    cmd "docker run -d --name lab-consul -p 8500:8500 consul agent -server -bootstrap -ui -client=0.0.0.0"
+    docker run -d --name lab-consul -p 8500:8500 consul agent -server -bootstrap -ui -client=0.0.0.0 >/dev/null
+    sleep 3
+
+    info "注册一个服务:"
+    cmd "curl -X PUT http://localhost:8500/v1/agent/service/register -d '{...web服务...}'"
+    curl -s -X PUT http://localhost:8500/v1/agent/service/register \
+        -d '{"ID":"web1","Name":"web","Address":"127.0.0.1","Port":8080}' >/dev/null
+    info "服务注册成功"
+
+    echo ""
+    info "查询服务:"
+    cmd "curl http://localhost:8500/v1/catalog/service/web"
+    curl -s http://localhost:8500/v1/catalog/service/web | head -c 500
+    echo ""
+
+    echo ""
+    info "KV 配置中心演示:"
+    cmd "curl -X PUT http://localhost:8500/v1/kv/config/db_host -d '192.168.1.200'"
+    curl -s -X PUT http://localhost:8500/v1/kv/config/db_host -d '192.168.1.200' >/dev/null
+    cmd "curl http://localhost:8500/v1/kv/config/db_host?raw"
+    curl -s "http://localhost:8500/v1/kv/config/db_host?raw"
+    echo ""
+
+    echo ""
+    info "Web UI: http://localhost:8500/ui"
+    warn "演示结束清理: docker rm -f lab-consul"
+    info "[完成] Lab 19 Consul 服务发现实操结束"
+}
+
+# ============================================================
+# Lab 20: Supervisor 进程管理(实操)
+# ============================================================
+lab20_supervisor() {
+    section "Lab 20: Supervisor 进程管理(实操)"
+
+    if ! has supervisord && ! has supervisorctl; then
+        fail "未找到 supervisor,安装: pip install supervisor 或 apt install supervisor"
+        info "以下为命令演示(不执行)"
+        cat << 'EOF'
+# 配置 /etc/supervisor/conf.d/myapp.conf
+[program:myapp]
+command=python3 /opt/app/main.py
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/myapp.log
+
+# 管理
+supervisorctl reread
+supervisorctl update
+supervisorctl status
+supervisorctl restart myapp
+EOF
+        return 0
+    fi
+
+    info "Supervisor 三大组件: supervisord(守护进程) + supervisorctl(控制) + 配置文件"
+    echo ""
+
+    info "准备一个演示程序(一个会崩溃的脚本):"
+    cat > /tmp/lab-crash.py << 'PYEOF'
+import time, sys
+print("进程启动, PID:", __import__("os").getpid(), flush=True)
+time.sleep(5)
+print("模拟崩溃退出", flush=True)
+sys.exit(1)
+PYEOF
+    info "演示脚本: /tmp/lab-crash.py(运行5秒后自动退出)"
+
+    echo ""
+    info "Supervisor 的价值: 进程崩溃后 autorestart 自动拉起"
+    cat << 'EOF'
+[program:lab-crash]
+command=python3 /tmp/lab-crash.py
+autostart=true
+autorestart=true          # 崩溃自动重启
+startretries=3            # 最多重试3次
+stdout_logfile=/tmp/lab-crash.log
 
 supervisor vs systemd:
-  supervisor    Python项目常用,配置简单,适合用户态进程
-  systemd       系统级服务管理,功能更强大,现代Linux默认
-
+  supervisor  Python 项目常用, 配置简单, 适合用户态进程
+  systemd     系统级服务管理, 功能更强大, 现代 Linux 默认
 EOF
 
-echo -e "${GREEN}[完成] Lab 16-20 高级工具合集 实战结束${NC}"
+    echo ""
+    info "常用命令速查:"
+    cat << 'EOF'
+supervisorctl reread          读取新配置
+supervisorctl update          应用配置变更
+supervisorctl status          查看所有进程状态
+supervisorctl start/stop/restart 程序名
+supervisorctl tail -f 程序名  实时看日志
+EOF
+
+    info "[完成] Lab 20 Supervisor 实操结束"
+}
+
+# ============================================================
+# 主流程
+# ============================================================
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}  Lab 16-20: 高级工具实操合集${NC}"
+echo -e "${CYAN}========================================${NC}"
+echo ""
+
+lab16_k8s
+lab17_helm
+lab18_lvs
+lab19_consul
+lab20_supervisor
+
+echo ""
+echo -e "${GREEN}[全部完成] Lab 16-20 高级工具实操合集结束${NC}"

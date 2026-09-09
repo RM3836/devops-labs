@@ -82,13 +82,13 @@ bash 02-scp-rsync.sh
 | 13 | 监控 | psutil 实时采集 CPU/内存/磁盘 | `10-mid-tools.sh` | 否 | ✅ |
 | 14 | 日志分析 | grep/awk 分析 Nginx 日志 | `10-mid-tools.sh` | 否 | ✅ |
 | 15 | CI/CD | GitHub Actions 流水线 | `10-mid-tools.sh` | 否 | ✅ |
-| 16 | Kubernetes | 集群 / Pod / Deployment | `16-advanced.sh` | 否 | ✅ |
-| 17 | Helm | K8s 包管理 | `16-advanced.sh` | 否 | ✅ |
-| 18 | LVS+HAProxy | 四/七层负载均衡 | `16-advanced.sh` | 否 | ✅ |
-| 19 | Consul+Nacos | 服务发现 / 配置中心 | `16-advanced.sh` | 否 | ✅ |
-| 20 | Supervisor | 进程管理 | `16-advanced.sh` | 否 | ✅ |
+| 16 | Kubernetes | kind 起集群 / Pod / Deployment / Service | `16-advanced.sh` | 否 | ✅ |
+| 17 | Helm | 仓库 / 安装 / 升级 / 回滚 | `16-advanced.sh` | 否 | ✅ |
+| 18 | LVS+HAProxy | 四/七层负载均衡 | `16-advanced.sh` | 是 | ✅ |
+| 19 | Consul | 服务注册发现 / KV 配置 | `16-advanced.sh` | 否 | ✅ |
+| 20 | Supervisor | 进程守护 / 崩溃自动拉起 | `16-advanced.sh` | 否 | ✅ |
 
-> 说明：Lab 10-15 合并为 `10-mid-tools.sh`（已升级为实操版，含真实可运行的 Redis/MySQL/Ansible/监控/日志/CI-CD），Lab 16-20 合并为 `16-advanced.sh`，与 `index.sh` 中展示的 20 个 Lab 一一对应。
+> 说明：Lab 10-15 合并为 `10-mid-tools.sh`、Lab 16-20 合并为 `16-advanced.sh`（均已升级为实操版），与 `index.sh` 中展示的 20 个 Lab 一一对应。K8s 采用 kind（复用 Docker daemon，无需虚拟机），相较 minikube 资源占用更低。
 
 ---
 
