@@ -47,12 +47,20 @@ echo "  bash 01-git-basics.sh"
 echo "  bash 02-scp-rsync.sh"
 echo "  ..."
 echo ""
+# 定位脚本所在目录(不依赖固定路径)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "可直接运行的脚本(含实操输出):"
-ls -1 ~/devops-labs/*.sh | while read f; do
-    printf "  %-35s %s\n" "$(basename $f)" "$(head -5 $f | grep '# DevOps' | sed 's/# DevOps实战 //')"
+ls -1 "$SCRIPT_DIR"/*.sh | while read f; do
+    # 跳过自身
+    [ "$(basename "$f")" = "index.sh" ] && continue
+    # 提取每个脚本头部注释里的标题(第2行, 格式: # DevOps实战 Lab 01: xxx)
+    desc="$(head -5 "$f" | grep '# DevOps实战' | sed 's/^# DevOps实战 //; s/ 运行:.*$//')"
+    printf "  %-35s %s\n" "$(basename "$f")" "$desc"
 done
 echo ""
 echo "Tips:"
 echo "  - 阶段一的脚本可以直接在WSL上跑,有实际输出"
 echo "  - 阶段二/三需要先装对应软件(脚本里有安装命令)"
 echo "  - 每个脚本末尾都有速查表,方便复习"
+echo "  - 文件说明: Lab 10-15 合并为 10-mid-tools.sh, Lab 16-20 合并为 16-advanced.sh"
