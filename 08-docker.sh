@@ -150,9 +150,9 @@ cat > /tmp/docker-lab/app/Dockerfile << 'DOCKERFILE'
 # 基础镜像
 FROM python:3.11-slim
 
-# 元数据
-LABEL maintainer="kainan@example.com"
-LABEL description="DevOps Lab Demo App"
+# 元数据(OCI 标准标签)
+LABEL org.opencontainers.image.authors="RM3836 <steam3836@foxmail.com>"
+LABEL org.opencontainers.image.description="DevOps Lab Demo App"
 
 # 工作目录
 WORKDIR /app
@@ -197,8 +197,7 @@ echo -e "${YELLOW}[6] docker-compose 多容器编排${NC}"
 echo "----------------------------------------"
 
 cat > /tmp/docker-lab/docker-compose.yml << 'YAMLEOF'
-version: "3.8"
-
+# 注: Compose v2 已废弃顶层 version 字段, 无需再声明
 services:
   web:
     image: nginx:alpine

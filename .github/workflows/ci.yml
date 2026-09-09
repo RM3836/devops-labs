@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  shellcheck:
+    name: 脚本质量检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: ShellCheck 静态检查
+        run: shellcheck --severity=error *.sh
+
+      - name: 语法检查
+        run: |
+          for f in *.sh; do
+            echo "检查 $f ..."
+            bash -n "$f"
+          done
+          echo "全部脚本语法通过"
+
+      - name: 运行 index.sh 验证输出
+        run: bash index.sh
+
+      - name: 运行阶段一脚本(无需 root 的部分)
+        run: |
+          bash 01-git-basics.sh
+          bash 02-scp-rsync.sh
+          bash 05-openssl.sh
+          bash 06-shell-awk-sed-grep.sh

@@ -62,23 +62,23 @@ echo ""
 echo -e "${YELLOW}[awk] 列处理（按字段切割）${NC}"
 echo "----------------------------------------"
 
-echo '$ awk \'{print $1, $2, $5}\' /tmp/test.log  # 打印第1,2,5列'
+echo "\$ awk '{print \$1, \$2, \$5}' /tmp/test.log  # 打印第1,2,5列"
 awk '{print $1, $2, $5}' /tmp/test.log
 echo ""
 
-echo '$ awk \'/ERROR/ {print $4, $6, $7}\' /tmp/test.log  # 筛选ERROR并打印关键列'
+echo "\$ awk '/ERROR/ {print \$4, \$6, \$7}' /tmp/test.log  # 筛选ERROR并打印关键列"
 awk '/ERROR/ {print $4, $6, $7}' /tmp/test.log
 echo ""
 
-echo '$ awk \'{sum+=$NF} END {print "平均响应时间:", sum/NR"s"}\' /tmp/test.log'
+echo "\$ awk '{sum+=\$NF} END {print \"平均响应时间:\", sum/NR\"s\"}' /tmp/test.log"
 awk '{sum+=$NF} END {print "平均响应时间:", sum/NR"s"}' /tmp/test.log
 echo ""
 
-echo '$ awk -F"[ :]" \'{print $3}\' /tmp/test.log | sort | uniq -c  # 按小时统计'
+echo "\$ awk -F\"[ :]\" '{print \$3}' /tmp/test.log | sort | uniq -c  # 按小时统计"
 awk -F"[ :]" '{print $3}' /tmp/test.log | sort | uniq -c
 echo ""
 
-echo '$ awk \'$NF > 0.1 {print "慢请求:", $0}\' /tmp/test.log  # 响应>0.1s的请求'
+echo "\$ awk '\$NF > 0.1 {print \"慢请求:\", \$0}' /tmp/test.log  # 响应>0.1s的请求"
 awk '$NF > 0.1 {print "慢请求:", $0}' /tmp/test.log
 echo ""
 
@@ -86,21 +86,21 @@ echo ""
 echo -e "${YELLOW}[sed] 流编辑器（替换/删除/插入）${NC}"
 echo "----------------------------------------"
 
-echo '$ sed -n \'1,3p\' /tmp/test.log  # 打印前3行'
+echo "\$ sed -n '1,3p' /tmp/test.log  # 打印前3行"
 sed -n '1,3p' /tmp/test.log
 echo ""
 
-echo '$ sed -i \'s/ERROR/CRITICAL/g\' /tmp/test.log.bak  # 替换(常用-i原地修改)'
+echo "\$ sed -i 's/ERROR/CRITICAL/g' /tmp/test.log.bak  # 替换(常用-i原地修改)"
 cp /tmp/test.log /tmp/test.log.bak
 sed -i 's/ERROR/CRITICAL/g' /tmp/test.log.bak
 head -3 /tmp/test.log.bak
 echo ""
 
-echo '$ sed \'/INFO/d\' /tmp/test.log  # 删除包含INFO的行'
+echo "\$ sed '/INFO/d' /tmp/test.log  # 删除包含INFO的行"
 sed '/INFO/d' /tmp/test.log
 echo ""
 
-echo '$ sed -n \'/ERROR/p\' /tmp/test.log  # 只打印ERROR行(类似grep)'
+echo "\$ sed -n '/ERROR/p' /tmp/test.log  # 只打印ERROR行(类似grep)"
 sed -n '/ERROR/p' /tmp/test.log
 echo ""
 
@@ -109,17 +109,17 @@ echo -e "${YELLOW}[组合技] 管道串联（运维日常）${NC}"
 echo "----------------------------------------"
 
 echo "统计每个服务的ERROR数:"
-echo '$ grep ERROR /tmp/test.log | awk \'{print $4}\' | sort | uniq -c | sort -rn'
+echo "\$ grep ERROR /tmp/test.log | awk '{print \$4}' | sort | uniq -c | sort -rn"
 grep ERROR /tmp/test.log | awk '{print $4}' | sort | uniq -c | sort -rn
 echo ""
 
 echo "找出访问最频繁的IP:"
-echo '$ awk \'{print $6}\' /tmp/test.log | sort | uniq -c | sort -rn | head -3'
+echo "\$ awk '{print \$6}' /tmp/test.log | sort | uniq -c | sort -rn | head -3"
 awk '{print $6}' /tmp/test.log | sort | uniq -c | sort -rn | head -3
 echo ""
 
 echo "提取状态码分布:"
-echo '$ awk \'{print $(NF-1)}\' /tmp/test.log | sort | uniq -c | sort -rn'
+echo "\$ awk '{print \$(NF-1)}' /tmp/test.log | sort | uniq -c | sort -rn"
 awk '{print $(NF-1)}' /tmp/test.log | sort | uniq -c | sort -rn
 echo ""
 

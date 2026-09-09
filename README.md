@@ -137,11 +137,32 @@ Redis / MySQL / Ansible 等需要先安装对应软件，脚本里已给出安�
 
 ---
 
+## 求职可展示能力
+
+| 能力项 | 对应 Lab | 可写进简历的技能点 |
+|--------|---------|-------------------|
+| Linux 基础 | 01-03 | Git 版本控制、SCP/rsync 文件同步、tcpdump 抓包分析 |
+| 网络与安全 | 03-05 | 防火墙规则、证书与加解密、抓包排障 |
+| Shell 自动化 | 06-07 | grep/awk/sed 三剑客、systemd 服务编排 |
+| 容器化 | 08 | Docker、Dockerfile、docker-compose 多容器编排 |
+| Web 服务 | 09 | Nginx 反向代理、负载均衡、HTTPS |
+| 中间件运维 | 10-11 | Redis 缓存、MySQL 主从与备份 |
+| 自动化运维 | 12 | Ansible Playbook、Role |
+| 可观测性 | 13-14 | Prometheus 监控、ELK 日志 |
+| CI/CD | 15 | Jenkins Pipeline、Harbor 镜像仓库 |
+| 云原生 | 16-17 | Kubernetes、Helm |
+| 高可用 | 18-20 | LVS/HAProxy 负载均衡、服务发现、进程管理 |
+
+> 面试时建议按上表挑 2-3 个 Lab 深入讲透（如 Docker + Nginx + K8s），而不是 20 个都泛泛而谈。
+
+---
+
 ## 贡献与规范
 
 - 保持脚本风格统一：头部注释块 + 阶段分隔线 + 速查表结尾。
 - 新增 Lab 遵循现有编号规则，并同步更新 `index.sh` 和本 README。
 - 提交信息规范：`Lab XX: 主题描述`。
+- CI 会在每次 push 时用 ShellCheck + `bash -n` 检查脚本质量。
 
 ---
 
